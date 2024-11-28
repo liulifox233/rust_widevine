@@ -25,7 +25,7 @@ use openssl::{
     symm::{decrypt, Cipher},
 };
 use prost::Message;
-use rand::{random};
+use rand::random;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 pub const WIDEVINE_SYSTEM_ID: [u8; 16] = [
@@ -119,10 +119,7 @@ pub struct LicenseDecryptionModule {
 }
 
 impl LicenseDecryptionModule {
-    pub fn new(
-        private_key: &Vec<u8>,
-        identification_blob: Vec<u8>,
-    ) -> LicenseDecryptionModule {
+    pub fn new(private_key: &Vec<u8>, identification_blob: Vec<u8>) -> LicenseDecryptionModule {
         let private_key: Rsa<Private> = Rsa::private_key_from_pem(private_key).unwrap();
         let pkey: PKey<Private> = PKey::from_rsa(private_key.clone()).unwrap();
         return LicenseDecryptionModule {
@@ -256,7 +253,7 @@ impl Session {
         self,
         ldm: &LicenseDecryptionModule,
         license: Vec<u8>,
-    ) -> error::Result<bool> {
+    ) -> error::Result<Vec<KeyContainer>> {
         let signed_message: SignedMessage = SignedMessage::decode(&*license).unwrap();
         let mut decrypted_session_key: Vec<u8> = vec![0; ldm.private_key.size() as usize];
         ldm.private_key
@@ -331,7 +328,7 @@ impl Session {
                 key: decrypted_key,
             })
         }
-        return Ok(key_containers.is_empty());
+        return Ok(key_containers);
     }
 }
 
@@ -419,11 +416,11 @@ mod tests {
         crunchyroll::CrunchyrollBuilder, media::Media, Crunchyroll, Locale, Series,
     };
     use http::header;
+    use rand::Rng;
     use regex::Regex;
     use reqwest::Client;
     use serde::{Deserialize, Serialize};
     use std::{env, fs};
-    use rand::{Rng};
 
     #[derive(Serialize, Debug)]
     struct AuthParameters {
@@ -456,7 +453,9 @@ mod tests {
             .login_with_etp_rt(&etp_rt)
             .await
             .unwrap();
-        let show = Series::from_id(&crunchy, CRUNCHYROLL_TEST_S1_CONTENT_ID).await.unwrap();
+        let show = Series::from_id(&crunchy, CRUNCHYROLL_TEST_S1_CONTENT_ID)
+            .await
+            .unwrap();
         let seasons = show.seasons().await.unwrap();
         let season_1 = seasons
             .iter()
@@ -500,7 +499,10 @@ mod tests {
             .unwrap();
         let response = crunchy
             .client()
-            .get(format!("https://cr-play-service.prd.crunchyrollsvc.com/v1/{}/web/chrome/play", CRUNCHYROLL_TEST_S1E1_CONTENT_ID))
+            .get(format!(
+                "https://cr-play-service.prd.crunchyrollsvc.com/v1/{}/web/chrome/play",
+                CRUNCHYROLL_TEST_S1E1_CONTENT_ID
+            ))
             .header(
                 header::AUTHORIZATION,
                 format!("Bearer {}", login_response.access_token),
@@ -539,7 +541,9 @@ mod tests {
             LicenseDecryptionModule::new(&device_private_key, device_client_id_blob);
 
         //PSSH from .mpd search for something like "CENC"...
-        let pssh = general_purpose::STANDARD.decode(CRUNCHYROLL_TEST_S1E1_PSSH).unwrap();
+        let pssh = general_purpose::STANDARD
+            .decode(CRUNCHYROLL_TEST_S1E1_PSSH)
+            .unwrap();
         let mut session = Session::new();
         session
             .set_service_certificate(
@@ -579,7 +583,8 @@ mod tests {
                     .decode(license_response.license)
                     .unwrap(),
             )
-            .unwrap();
+            .unwrap()
+            .is_empty();
         assert!(successful);
         fs::create_dir_all("security").unwrap();
     }
@@ -774,7 +779,8 @@ mod tests {
             .unwrap();
         let successful: bool = session
             .parse_license(&ldm, license.to_vec())
-            .unwrap();
+            .unwrap()
+            .is_empty();
         assert!(successful);
         fs::create_dir_all("security").unwrap();
     }
